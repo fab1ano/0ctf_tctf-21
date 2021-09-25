@@ -13,6 +13,8 @@ import mmap
 import ctypes
 import subprocess
 
+import time
+
 
 class Assembler:
     """The Assembler takes care of outputting instructions, labels, etc.,
@@ -546,18 +548,21 @@ if __name__ == '__main__':
         source = f.read()
 
     tempdir = tempfile.TemporaryDirectory()
-    asm_path = tempdir.name + '/jit.s'
-    obj_path = tempdir.name + '/jit.o'
-    bin_path = tempdir.name + '/jit.bin'
+    tempdir_name = "/tmp/aaaa"
+    asm_path = tempdir_name + '/jit.s'
+    obj_path = tempdir_name + '/jit.o'
+    bin_path = tempdir_name + '/jit.bin'
 
+    print(source)
     asm_fp = open(asm_path, 'w')
     node = ast.parse(source, filename=args.filename)
     asm = Assembler(output_file=asm_fp, peephole=False)
     try:
         compiler = Compiler(assembler=asm)
         compiler.compile(node)
-    except:
+    except Exception as exc:
         print('err')
+        print(exc)
         exit(1)
 
     asm_fp.flush()
@@ -578,6 +583,10 @@ if __name__ == '__main__':
     ctypes_buffer = ctypes.c_int.from_buffer(mm)
     func = ctypes.CFUNCTYPE(ctypes.c_int64)(ctypes.addressof(ctypes_buffer))
     func ._avoid_gc_for_mmap = mm
+    sys.stdout.write('Press enter to run jit code\n')
+    sys.stdout.flush()
+    input()
+
     print(f'jit return: {func()}')
 
     tempdir.cleanup()

@@ -16,7 +16,7 @@ Paste your code here, end it with EOF (not Ctrl-D :P). Then I will run `python3 
 EOF
 print $logo;
 my $filename = `mktemp`;
-alarm(30);
+alarm(300000);
 chomp $filename;
 open(my $f, '>', $filename) || die 'Fatal error, ping admin plz ._.';
 while (my $line = <>) {
@@ -24,5 +24,6 @@ while (my $line = <>) {
     print $f $line;
 }
 close($f);
-exec 'timeout', '-k1', 30, 'python3', 'pyast64.py', $filename;
+#exec 'timeout', '-k1', 300000, 'python3', 'pyast64.py', $filename;
+exec 'python3', 'pyast64.py', $filename;
 
