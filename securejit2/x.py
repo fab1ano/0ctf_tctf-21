@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Exploit script template."""
+"""Exploit for securejit2."""
 import subprocess
 import sys
 import psutil
@@ -9,10 +9,7 @@ from struct import pack
 from pwn import *
 
 context.log_level = 'debug'
-#context.terminal = ['tmux', 'splitw', '-p', '75']
-#context.aslr = False
 
-BINARY = './'
 GDB_BINARY = '/usr/bin/python3'
 HOST = '118.195.199.18'
 PORT = 40404
@@ -90,12 +87,10 @@ return 0
 """
 
 
-
 def exploit(p, mode):
     """Exploit goes here."""
     p.sendlineafter('.\n', code)
 
-    #pause()
     p.sendline('EOF')
 
     if mode == "debug":
@@ -105,6 +100,7 @@ def exploit(p, mode):
 
 
 def attach_gdb():
+    """Starts gdb and attaches to running process."""
     procs = [p for p in psutil.process_iter() if p.name() == 'python3'
              and 'pyast64.py' in  p.cmdline()]
     assert len(procs) == 1
@@ -137,17 +133,7 @@ def main():
         print(f'Usage: {sys.argv[0]} <mode>')
         sys.exit(0)
 
-    try:
-        context.binary = ELF(BINARY)
-    except IOError:
-        print(f'Failed to load binary ({BINARY})')
-
     mode = sys.argv[1]
-
-    #if mode == 'local':
-    #    p = process(BINARY, env=env)
-    #elif mode == 'debug':
-    #    p = gdb.debug(args=BINARY, gdbscript='\n'.join(GDB_COMMANDS), env=env)
 
     if mode == 'local':
         p = remote(PWN_HOST, PORT)
