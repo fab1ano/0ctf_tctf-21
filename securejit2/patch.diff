@@ -1,0 +1,135 @@
+diff --git a/pyast64.py b/pyast64.py
+index ad692e8..2133569 100644
+--- a/pyast64.py
++++ b/pyast64.py
+@@ -8,6 +8,10 @@ Released under a permissive MIT license (see LICENSE.txt).
+ import argparse
+ import ast
+ import sys
++import tempfile
++import mmap
++import ctypes
++import subprocess
+ 
+ 
+ class Assembler:
+@@ -178,8 +182,7 @@ class Compiler:
+         visit_func(node)
+ 
+     def header(self):
+-        self.asm.directive('.section __TEXT, __text')
+-        self.asm.comment('')
++        self.asm.directive('.section .text')
+ 
+     def footer(self):
+         self.compile_putc()
+@@ -189,8 +192,8 @@ class Compiler:
+         # Insert this into every program so it can call putc() for output
+         self.asm.label('putc')
+         self.compile_enter()
+-        self.asm.instr('movl', '$0x2000004', '%eax')    # write
+-        self.asm.instr('movl', '$1', '%edi')            # stdout
++        self.asm.instr('movq', '$1', '%rax')    # write
++        self.asm.instr('movq', '$1', '%rdi')            # stdout
+         self.asm.instr('movq', '%rbp', '%rsi')          # address
+         self.asm.instr('addq', '$16', '%rsi')
+         self.asm.instr('movq', '$1', '%rdx')            # length
+@@ -223,11 +226,7 @@ class Compiler:
+         self.break_labels = []
+ 
+         # Function label and header
+-        if node.name == 'main':
+-            self.asm.directive('.globl _main')
+-            self.asm.label('_main')
+-        else:
+-            self.asm.label(node.name)
++        self.asm.label(node.name)
+         self.num_extra_locals = len(self.locals) - len(node.args.args)
+         self.compile_enter(self.num_extra_locals)
+ 
+@@ -238,10 +237,7 @@ class Compiler:
+         if not isinstance(node.body[-1], ast.Return):
+             # Function didn't have explicit return at the end,
+             # compile return now (or exit for "main")
+-            if self.func == 'main':
+-                self.compile_exit(0)
+-            else:
+-                self.compile_return(self.num_extra_locals)
++            self.compile_return(self.num_extra_locals)
+ 
+         self.asm.comment('')
+         self.func = None
+@@ -278,13 +274,9 @@ class Compiler:
+     def visit_Return(self, node):
+         if node.value:
+             self.visit(node.value)
+-        if self.func == 'main':
+-            # Returning from main, exit with that return code
+-            self.compile_exit(None if node.value else 0)
+-        else:
+-            if node.value:
+-                self.asm.instr('popq', '%rax')
+-            self.compile_return(self.num_extra_locals)
++        if node.value:
++            self.asm.instr('popq', '%rax')
++        self.compile_return(self.num_extra_locals)
+ 
+     def visit_Num(self, node):
+         self.asm.instr('pushq', '${}'.format(node.n))
+@@ -542,13 +534,6 @@ class Compiler:
+         # Global names are already collected by LocalsVisitor
+         pass
+ 
+-    def visit_Subscript(self, node):
+-        self.visit(node.slice.value)
+-        self.asm.instr('popq', '%rax')
+-        local_offset = self.local_offset(node.value.id)
+-        self.asm.instr('movq', '{}(%rbp)'.format(local_offset), '%rdx')
+-        self.asm.instr('pushq', '(%rdx,%rax,8)')
+-
+ 
+ if __name__ == '__main__':
+     parser = argparse.ArgumentParser()
+@@ -559,6 +544,40 @@ if __name__ == '__main__':
+ 
+     with open(args.filename) as f:
+         source = f.read()
++
++    tempdir = tempfile.TemporaryDirectory()
++    asm_path = tempdir.name + '/jit.s'
++    obj_path = tempdir.name + '/jit.o'
++    bin_path = tempdir.name + '/jit.bin'
++
++    asm_fp = open(asm_path, 'w')
+     node = ast.parse(source, filename=args.filename)
+-    compiler = Compiler(peephole=not args.no_peephole)
+-    compiler.compile(node)
++    asm = Assembler(output_file=asm_fp, peephole=False)
++    try:
++        compiler = Compiler(assembler=asm)
++        compiler.compile(node)
++    except:
++        print('err')
++        exit(1)
++
++    asm_fp.flush()
++    asm_fp.close()
++
++    try:
++        subprocess.call(['as', asm_path, '-o', obj_path])
++        subprocess.call(['objcopy', '-S', '-O', 'binary', '-j', '.text', obj_path, bin_path])
++    except:
++        print('err')
++        exit(1)
++
++    with open(bin_path, 'rb') as f:
++        jitcode = f.read()
++
++    mm = mmap.mmap(-1, len(jitcode), flags=34, prot=mmap.PROT_WRITE|mmap.PROT_READ|mmap.PROT_EXEC)
++    mm.write(jitcode)
++    ctypes_buffer = ctypes.c_int.from_buffer(mm)
++    func = ctypes.CFUNCTYPE(ctypes.c_int64)(ctypes.addressof(ctypes_buffer))
++    func ._avoid_gc_for_mmap = mm
++    print(f'jit return: {func()}')
++
++    tempdir.cleanup()
